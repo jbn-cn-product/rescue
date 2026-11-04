@@ -1,0 +1,17 @@
+[Unit]
+Description=rescue-term: 独立 PTY 终端代理
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# root：终端里要对宿主服务做 systemctl 操作
+
+ExecStart=/opt/rescue-term/rescue-term --config /opt/rescue-term/config/rescue-term.yaml
+Restart=always
+RestartSec=3
+# 日志只走 stderr → journald
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

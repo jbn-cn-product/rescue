@@ -1,0 +1,10 @@
+
+target/
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# 运行期配置（真实 token 的 rescue-term.yaml 只存在于设备上）
+rescue-term.yaml
+*.local.yaml

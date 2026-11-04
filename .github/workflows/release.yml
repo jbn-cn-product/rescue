@@ -1,0 +1,96 @@
+name: Release
+
+# 打 tag（v*）触发：先全量测试，通过后按目标平台打包 rescue-term，
+# 产物为 tar.gz（二进制 + systemd unit + 示例配置 + install.sh）+ sha256，
+# 附到 GitHub Release。rescue-server 是库，不产出二进制，由 test 门禁覆盖。
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 门禁：测试不通过不出包
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rescue-server
+            rescue-term
+      - run: cargo test --manifest-path rescue-server/Cargo.toml
+      - run: cargo test --manifest-path rescue-term/Cargo.toml
+
+  package:
+    name: package (${{ matrix.target }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 主目标：RK3588 等 arm64 边缘设备（public 仓库免费原生 arm64 runner）
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-24.04-arm
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          # macOS 两个架构都在 arm runner 上编译（Rust 跨 mac 目标免交叉工具链）
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rescue-term
+          key: ${{ matrix.target }}
+
+      - name: Build (release)
+        run: cargo build --manifest-path rescue-term/Cargo.toml --release --target ${{ matrix.target }}
+
+      - name: Package
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PKG="rescue-term-${VERSION}-${{ matrix.target }}"
+          mkdir -p "dist/${PKG}/config"
+
+          BIN="rescue-term/target/${{ matrix.target }}/release/rescue-term"
+          strip "$BIN" 2>/dev/null || true
+          cp "$BIN" "dist/${PKG}/"
+          cp rescue-term/deploy/rescue-term.service "dist/${PKG}/"
+          cp rescue-term/deploy/install.sh "dist/${PKG}/"
+          cp rescue-term/deploy/rescue-term.example.yaml "dist/${PKG}/config/"
+
+          tar -czf "dist/${PKG}.tar.gz" -C dist "$PKG"
+          # sha256sum（Linux）/ shasum（macOS）双兼容
+          cd dist
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256"
+          else
+            shasum -a 256 "${PKG}.tar.gz" > "${PKG}.tar.gz.sha256"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rescue-term-${{ matrix.target }}
+          path: dist/*
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*

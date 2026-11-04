@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 格式 + lint：两个 crate 各自独立 Cargo.toml（非 workspace），逐个跑
+  lint:
+    name: lint (fmt + clippy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            rescue-server
+            rescue-term
+      - name: rustfmt
+        run: |
+          cargo fmt --manifest-path rescue-server/Cargo.toml --check
+          cargo fmt --manifest-path rescue-term/Cargo.toml --check
+      - name: clippy
+        run: |
+          cargo clippy --manifest-path rescue-server/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path rescue-term/Cargo.toml --all-targets -- -D warnings
+
+  # 测试：rescue-server 有 9 项集成测试（假设备 + 假浏览器 + MockHooks），
+  # 只绑 127.0.0.1，无外部依赖；rescue-term 暂无测试，编译期即冒烟
+  test:
+    name: test (${{ matrix.crate }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        crate: [rescue-server, rescue-term]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.crate }}
+      - run: cargo test --manifest-path ${{ matrix.crate }}/Cargo.toml

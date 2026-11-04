@@ -1,0 +1,8 @@
+# rescue-term 配置示例
+# 实际部署到 /opt/rescue-term/config/rescue-term.yaml
+# 配置优先级：CLI 参数 > 环境变量 > YAML 文件
+rescue: # 旧字段名 platform 同样兼容
+  enabled: true
+  endpoint: https://your-host # 产品服务器地址（WS /ws/rescue）
+  sn: DEVICE-SN # 设备序列号
+  token: DEVICE-TOKEN # 设备令牌（Bearer，握手 Header 传输）
